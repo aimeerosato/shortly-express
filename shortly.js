@@ -1,8 +1,8 @@
-//After forking final project from Chris
 var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
+var bcrypt = require('bcrypt-nodejs');
 
 
 var db = require('./app/config');
@@ -23,24 +23,37 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
 
+// added to require a session
+var session = require('express-session');
 
-app.get('/', 
+// starts session
+app.use(session({
+  secret: 'sprint123',
+  resave: false,
+  saveUninitialized: true
+}));
+
+app.get('/', util.checkUser, function(req, res) {
+  res.render('index');
+});
+
+
+//Shortens url and puts it into index list
+app.get('/create', util.checkUser,  
 function(req, res) {
   res.render('index');
 });
 
-app.get('/create', 
-function(req, res) {
-  res.render('index');
-});
-
-app.get('/links', 
+// fetches data out of database
+app.get('/links',util.checkUser,
 function(req, res) {
   Links.reset().fetch().then(function(links) {
     res.send(200, links.models);
   });
 });
 
+
+//post information to database
 app.post('/links', 
 function(req, res) {
   var uri = req.body.url;
@@ -65,7 +78,8 @@ function(req, res) {
           title: title,
           base_url: req.headers.origin
         });
-
+        
+        //saves this info to database
         link.save().then(function(newLink) {
           Links.add(newLink);
           res.send(200, newLink);
@@ -78,9 +92,69 @@ function(req, res) {
 /************************************************************/
 // Write your authentication routes here
 /************************************************************/
+//sign up route
+//Get renders page
+app.get('/signup', function(req, res){
+  res.render('signup');
+});
+
+//post for signup
+//input username and password
+
+app.post('/signup', function(req, res){
+  var username = req.body.username;
+  var password = req.body.password;
+
+  new User({username: username}).fetch().then(function(user){
+    //if unique username, create new user and password
+    if (!user){
+      bcrypt.hash(password, null, null, function(err, hash){
+        Users.create({
+          username: username,
+          password: hash
+        }).then(function(user){
+          util.createSession(req, res, user);
+        });
+      });
+    } else {
+      //show error
+      console.log('Account already exists!. Try again!');
+      res.redirect('/signup');
+    }
+  });
+});
+
+//login route
+app.get('/login', function(req, res){
+  res.render('login'); 
+});
 
 
+app.post('/login', function(req, res){
+  var username = req.body.username;
+  var password = req.body.password;
+  new User({username: username}).fetch().then(function(user){
+    if (!user){
+      res.redirect('/login');
+    }
+    bcrypt.compare(password, user.get('password'), function(err, match){
+      console.log('hashed', match);
+      if (match){
+        util.createSession(req, res, user);
+      } else {
+        res.redirect('/login');
+      }
+    });
+  });
 
+});
+
+//logout added button in index.ejs
+app.get('/logout', function(req, res){
+  req.session.destroy(function(){
+    res.redirect('/');
+  });
+});
 /************************************************************/
 // Handle the wildcard route last - if all other routes fail
 // assume the route is a short code and try and handle it here.
@@ -111,3 +185,26 @@ app.get('/*', function(req, res) {
 
 console.log('Shortly is listening on 4568');
 app.listen(4568);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
